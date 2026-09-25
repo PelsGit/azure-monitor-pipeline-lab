@@ -49,6 +49,9 @@ Result: 0 debug/noisy records in `Syslog`; all 20 INFO OTLP records arrived with
 4. The exporter authenticates with the extension's **managed identity** – no secrets on the edge.
 5. Extension release train `Preview` was used for OTLP (preview feature); Syslog/CEF is GA.
 
+## Learning guide
+Start with **[docs/LEARN.md](docs/LEARN.md)**: diagrams, data flow, real output, portal tour and self-test.
+
 ## Useful KQL
 See `docs/queries.kql`.
 
