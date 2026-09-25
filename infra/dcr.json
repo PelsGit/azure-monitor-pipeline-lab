@@ -1,0 +1,84 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": {
+      "type": "string",
+      "defaultValue": "westeurope"
+    },
+    "dceName": {
+      "type": "string",
+      "defaultValue": "dce-amp-lab"
+    },
+    "workspaceName": {
+      "type": "string",
+      "defaultValue": "law-amp-lab"
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Insights/dataCollectionRules",
+      "apiVersion": "2024-03-11",
+      "name": "dcr-amp-lab",
+      "location": "[parameters('location')]",
+      "properties": {
+        "dataCollectionEndpointId": "[resourceId('Microsoft.Insights/dataCollectionEndpoints',parameters('dceName'))]",
+        "streamDeclarations": {
+          "Custom-OTLP": {
+            "columns": [
+              {
+                "name": "Body",
+                "type": "string"
+              },
+              {
+                "name": "TimeGenerated",
+                "type": "datetime"
+              },
+              {
+                "name": "SeverityText",
+                "type": "string"
+              }
+            ]
+          }
+        },
+        "dataSources": {},
+        "destinations": {
+          "logAnalytics": [
+            {
+              "name": "law",
+              "workspaceResourceId": "[resourceId('Microsoft.OperationalInsights/workspaces',parameters('workspaceName'))]"
+            }
+          ]
+        },
+        "dataFlows": [
+          {
+            "streams": [
+              "Microsoft-Syslog-FullyFormed"
+            ],
+            "destinations": [
+              "law"
+            ],
+            "transformKql": "source",
+            "outputStream": "Microsoft-Syslog"
+          },
+          {
+            "streams": [
+              "Custom-OTLP"
+            ],
+            "destinations": [
+              "law"
+            ],
+            "transformKql": "source",
+            "outputStream": "Custom-OTelLogs_CL"
+          }
+        ]
+      }
+    }
+  ],
+  "outputs": {
+    "immutableId": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Insights/dataCollectionRules','dcr-amp-lab')).immutableId]"
+    }
+  }
+}

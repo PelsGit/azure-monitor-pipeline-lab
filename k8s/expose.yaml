@@ -1,0 +1,13 @@
+# Exposes the pipeline receivers on the VM LAN IP (192.168.2.100) via K3s ServiceLB (klipper-lb)
+apiVersion: v1
+kind: Service
+metadata:
+  name: amp-lab-pipeline-lan
+  namespace: amp
+spec:
+  type: LoadBalancer
+  selector:
+    pipeline: amp-lab-pipeline
+  ports:
+  - {name: syslog-udp, port: 514, targetPort: 514, protocol: UDP}
+  - {name: otlp-grpc, port: 4317, targetPort: 4317, protocol: TCP}

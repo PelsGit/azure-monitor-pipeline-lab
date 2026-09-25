@@ -1,0 +1,16 @@
+# telemetrygen: emits OTLP log records to the pipeline (INFO + DEBUG + a fake secret to demo transformations)
+apiVersion: batch/v1
+kind: Job
+metadata: {name: otlp-gen, namespace: amp}
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: info
+        image: ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen:latest
+        args: [logs, --otlp-endpoint=amp-lab-pipeline-service.amp.svc:4317, --otlp-insecure, --logs=20, --rate=2, --severity-text=INFO, --severity-number=9, --body=user login ok user=alice password=hunter2]
+      - name: debug
+        image: ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen:latest
+        args: [logs, --otlp-endpoint=amp-lab-pipeline-service.amp.svc:4317, --otlp-insecure, --logs=20, --rate=2, --severity-text=DEBUG, --severity-number=5, --body=debug heartbeat (should be dropped)]

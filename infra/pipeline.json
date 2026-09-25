@@ -1,0 +1,208 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "customLocationId": {
+      "type": "string"
+    },
+    "dceUrl": {
+      "type": "string"
+    },
+    "dcrImmutableId": {
+      "type": "string"
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "westeurope"
+    },
+    "syslogTransform": {
+      "type": "string",
+      "defaultValue": "source | where SeverityLevel != 'debug' | where not(ProcessName in ('pvestatd','CRON','systemd-timesyncd'))"
+    },
+    "otlpTransform": {
+      "type": "string",
+      "defaultValue": "source | where SeverityText != 'DEBUG' | extend Body = replace_string(Body, 'password=hunter2', 'password=***')"
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.monitor/pipelineGroups",
+      "apiVersion": "2026-04-01",
+      "name": "amp-lab-pipeline",
+      "location": "[parameters('location')]",
+      "extendedLocation": {
+        "name": "[parameters('customLocationId')]",
+        "type": "CustomLocation"
+      },
+      "properties": {
+        "receivers": [
+          {
+            "type": "Syslog",
+            "name": "syslog-udp",
+            "syslog": {
+              "endpoint": "0.0.0.0:514",
+              "transportProtocol": "udp"
+            }
+          },
+          {
+            "type": "OTLP",
+            "name": "otlp-grpc",
+            "otlp": {
+              "endpoint": "0.0.0.0:4317"
+            },
+            "tlsConfiguration": "tls-disabled"
+          }
+        ],
+        "processors": [
+          {
+            "type": "MicrosoftSyslog",
+            "name": "ms-syslog"
+          },
+          {
+            "type": "TransformLanguage",
+            "name": "syslog-transform",
+            "transformLanguage": {
+              "transformStatement": "[parameters('syslogTransform')]"
+            }
+          },
+          {
+            "type": "TransformLanguage",
+            "name": "otlp-transform",
+            "transformLanguage": {
+              "transformStatement": "[parameters('otlpTransform')]"
+            }
+          }
+        ],
+        "exporters": [
+          {
+            "type": "AzureMonitorWorkspaceLogs",
+            "name": "to-syslog-table",
+            "azureMonitorWorkspaceLogs": {
+              "api": {
+                "dataCollectionEndpointUrl": "[parameters('dceUrl')]",
+                "dataCollectionRule": "[parameters('dcrImmutableId')]",
+                "stream": "Microsoft-Syslog-FullyFormed",
+                "schema": {
+                  "recordMap": [
+                    {
+                      "from": "attributes.CollectorHostName",
+                      "to": "CollectorHostName"
+                    },
+                    {
+                      "from": "attributes.Computer",
+                      "to": "Computer"
+                    },
+                    {
+                      "from": "attributes.EventTime",
+                      "to": "EventTime"
+                    },
+                    {
+                      "from": "attributes.Facility",
+                      "to": "Facility"
+                    },
+                    {
+                      "from": "attributes.HostIP",
+                      "to": "HostIP"
+                    },
+                    {
+                      "from": "attributes.HostName",
+                      "to": "HostName"
+                    },
+                    {
+                      "from": "attributes.ProcessID",
+                      "to": "ProcessID"
+                    },
+                    {
+                      "from": "attributes.ProcessName",
+                      "to": "ProcessName"
+                    },
+                    {
+                      "from": "attributes.SeverityLevel",
+                      "to": "SeverityLevel"
+                    },
+                    {
+                      "from": "attributes.SourceSystem",
+                      "to": "SourceSystem"
+                    },
+                    {
+                      "from": "attributes.SyslogMessage",
+                      "to": "SyslogMessage"
+                    },
+                    {
+                      "from": "attributes.TimeGenerated",
+                      "to": "TimeGenerated"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "type": "AzureMonitorWorkspaceLogs",
+            "name": "to-otel-table",
+            "azureMonitorWorkspaceLogs": {
+              "api": {
+                "dataCollectionEndpointUrl": "[parameters('dceUrl')]",
+                "dataCollectionRule": "[parameters('dcrImmutableId')]",
+                "stream": "Custom-OTLP",
+                "schema": {
+                  "recordMap": [
+                    {
+                      "from": "body",
+                      "to": "Body"
+                    },
+                    {
+                      "from": "severity_text",
+                      "to": "SeverityText"
+                    },
+                    {
+                      "from": "time_unix_nano",
+                      "to": "TimeGenerated"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        ],
+        "service": {
+          "pipelines": [
+            {
+              "name": "syslog",
+              "type": "Logs",
+              "receivers": [
+                "syslog-udp"
+              ],
+              "processors": [
+                "ms-syslog",
+                "syslog-transform"
+              ],
+              "exporters": [
+                "to-syslog-table"
+              ]
+            },
+            {
+              "name": "otlp",
+              "type": "Logs",
+              "receivers": [
+                "otlp-grpc"
+              ],
+              "processors": [
+                "otlp-transform"
+              ],
+              "exporters": [
+                "to-otel-table"
+              ]
+            }
+          ]
+        },
+        "tlsConfigurations": [
+          {
+            "name": "tls-disabled",
+            "mode": "disabled"
+          }
+        ]
+      }
+    }
+  ]
+}

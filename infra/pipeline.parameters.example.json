@@ -1,0 +1,11 @@
+{
+  "customLocationId": {
+    "value": "/subscriptions/<sub>/resourceGroups/rg-amp-lab/providers/Microsoft.ExtendedLocation/customLocations/cl-amp-lab"
+  },
+  "dceUrl": {
+    "value": "https://<dce>.westeurope-1.ingest.monitor.azure.com"
+  },
+  "dcrImmutableId": {
+    "value": "dcr-<immutable-id>"
+  }
+}

@@ -1,0 +1,10 @@
+// Volume per host
+Syslog | summarize n=count() by Computer, bin(TimeGenerated, 1h) | render timechart
+// Proof the edge filter works (should be 0)
+Syslog | where SeverityLevel == 'debug' or ProcessName in ('pvestatd','CRON','systemd-timesyncd') | count
+// Top talkers -> candidates for the next filter
+Syslog | summarize n=count() by ProcessName | top 10 by n
+// OTLP: masked secret, no DEBUG
+OTelLogs_CL | summarize n=count() by SeverityText, Body
+// Ingestion cost view
+Usage | where TimeGenerated > ago(1d) | summarize MB=sum(Quantity) by DataType
