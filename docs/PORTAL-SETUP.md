@@ -59,13 +59,16 @@ Choose **one** of these:
 | Subscription | `ME-MngEnv224247-rutgerpels-1` | |
 | Resource group | `rg-amp-lab` | Keeps teardown to one command |
 | Cluster name | `arc-amp-lab` | |
-| Custom location | let the portal create one, or name it `cl-amp-portal` | Maps an Azure "location" to a namespace on your cluster |
+| Custom location | let the portal create it (`azure-monitor-arc-amp-lab`) | Maps an Azure "location" to a namespace on your cluster. **Note:** the portal maps it to namespace **`azure-monitor-ns`**, not a namespace with the custom location's name |
 | Enable transport security (TLS) | **Unchecked** | UDP syslog can't use TLS; keeps the demo simple |
 | Require client authentication within cluster | **Unchecked** | mTLS isn't needed for the demo |
 
 → **Next: Dataflows**
 
-### B3. Dataflows tab → **+ Add dataflow**
+### B3. Dataflows tab → edit **`default-syslog`**
+
+The portal pre-creates a `default-syslog` dataflow on port 514. **Edit it** instead of using *+ Add dataflow*;
+a second dataflow on 514 is rejected with "port already in use".
 
 | Field | Enter |
 |---|---|
@@ -75,7 +78,7 @@ Choose **one** of these:
 | Protocol | `UDP` |
 | Format | both `5424` and `3164` (Proxmox's rsyslog sends 5424; `logger` can send either) |
 | Collect messages with PRI header | enabled (default) |
-| Log Analytics workspace | `law-amp-lab` |
+| Log Analytics workspace | `law-amp-lab`. ⚠️ **Re-check this every time you re-run the wizard**: on retries it can silently fall back to `DefaultWorkspace-<sub>-WEU` |
 | Table | `Syslog` |
 | Table name | `Syslog` (must match Table) |
 
@@ -96,6 +99,32 @@ Select **Check KQL syntax** and make sure it passes (it also validates against t
 Select **Create**. Deployment takes **several minutes**: Azure installs the pipeline extension, creates the
 custom location, DCE, DCR and the pipeline instance, then waits for the pod to be healthy.
 
+#### ⚠️ B4a. If Create fails with `PreflightValidationError … Invalid Format of Cluster Extension IDs`
+Observed 1–2 Oct 2026 from **both** entry points: the portal builds the custom location's
+`clusterExtensionIds` **without the extension name** (`…/extensions/`). Fix it in the template:
+
+1. On **Review + create** → **Download a template for automation** → **Deploy** → **Edit parameters**.
+2. Replace `clusterExtensionIds` with the complete ID, ending in the value of `pipelineExtensionName`
+   (portal default `azmon-pipeline-extension`):
+   ```json
+   "clusterExtensionIds": { "value": [
+     "/subscriptions/<sub-id>/resourceGroups/rg-amp-lab/providers/Microsoft.Kubernetes/connectedClusters/arc-amp-lab/providers/Microsoft.KubernetesConfiguration/extensions/azmon-pipeline-extension"
+   ]}
+   ```
+3. Check it carefully. Each of these produces a *different* preflight error:
+
+   | Mistake | Error you'll see |
+   |---|---|
+   | Name missing (`…/extensions/`) | `Invalid Format of Cluster Extension IDs` |
+   | Trailing slash (`…/azmon-pipeline-extension/`) | `Invalid Format of Cluster Extension IDs` |
+   | A space from a line-wrapped copy (`connectedClust ers`) | `Host Resource of Cluster Extension IDs … do not match HostResourceID` |
+
+   The ID must start with exactly the same text as the `clusterId` parameter.
+4. Also re-check the workspace in `tableInfo` (`…/workspaces/law-amp-lab`), then **Review + create**.
+
+Don't pre-create the extension/custom location with CLI under *different* names: the template would then
+install a second pipeline extension.
+
 ```mermaid
 sequenceDiagram
   actor You
@@ -110,9 +139,11 @@ sequenceDiagram
   Pod-->>ARM: healthy → Succeeded
 ```
 
-> ⚠️ **Known issue in this lab**: with cert-management 1.2.0 + pipeline 1.7.0, the deployment may hang
-> because the `arc-amp-*-root-ca-current` secrets aren't created. If the deployment stays *Running*
-> for more than about 15 minutes, see **Part F**.
+> ⚠️ **Known issue (reproduced 4 out of 4 times)**: with cert-management 1.2.0 + pipeline 1.7.0, the
+> `arc-amp-*-root-ca-current` secrets aren't created. The pipeline pod can even reach 3/3 Running, but its
+> TLS certificate stays pending, and the deployment runs for 30+ minutes or times out. You don't have to wait:
+> check after about 5 minutes with `kubectl get clusterissuer,bundle | grep arc-amp`. If you see `False` or
+> `SourceNotFound`, apply the **Part F** workaround. The deployment then finishes on its own.
 
 ---
 
@@ -156,7 +187,9 @@ Or from a Proxmox host: `logger -t amp-demo "hello from $(hostname)"`.
 ## Part E: Verify (official checks + lab checks)
 
 **E1. Cluster components:** *Arc cluster `arc-amp-lab` → Kubernetes resources → Services and ingresses*.
-Expect `amp-portal-demo-service` (and, per docs, `amp-portal-demo-external-service`).
+Expect `amp-portal-demo-service` in namespace `azure-monitor-ns`. The docs also list
+`amp-portal-demo-external-service`; it was **not** created in this lab (UDP syslog, TLS off). Our own
+`amp-portal-demo-lan` from Part C takes that role.
 
 **E2. Heartbeat** (every minute; `OSMajorVersion` = pipeline name). In *law-amp-lab → Logs*:
 ```kusto
@@ -164,6 +197,12 @@ Heartbeat
 | where OSMajorVersion == "amp-portal-demo"
 | summarize LastBeat = max(TimeGenerated) by Computer, OSMajorVersion
 ```
+> ⚠️ In this lab (pipeline 1.7.0) **no pipeline heartbeat appeared** in either workspace, while data did
+> arrive. Treat E3/E4 as the real proof; don't treat a missing heartbeat alone as a failure.
+
+**E2b. DCR metrics (portal view of the edge → cloud hop):** *DCR → Monitoring → Metrics*, using
+`Rows Received` and `Rows Dropped`. Rows received but nothing in the table? Check the DCR's **destination
+workspace** (`destinations.logAnalytics[].workspaceResourceId` in the JSON view).
 
 **E3. Data arrived** (allow 5–10 minutes for first ingestion):
 ```kusto
@@ -179,8 +218,9 @@ Syslog | where TimeGenerated > ago(30m) | where SeverityLevel == 'debug' | count
 Syslog | where TimeGenerated > ago(30m) | where ProcessName == 'postfix' | count
 ```
 
-**E5. See what the portal built for you:** open *Monitor → Data Collection Rules* and find the new DCR. In its
-**JSON view**, look at `dataFlows` (expect stream `Microsoft-Syslog-FullyFormed` → `Microsoft-Syslog`), then
+**E5. See what the portal built for you:** open *Monitor → Data Collection Rules* and find the new DCR
+(named `Aep-amp-portal-demo-<random>`, as is the DCE). In its **JSON view**, look at `dataFlows` (the portal
+uses `Microsoft-Syslog-FullyFormed` as both input and output stream; the CLI build used output `Microsoft-Syslog`; both land in `Syslog`), then
 check *Access control* (the extension's identity has **Monitoring Metrics Publisher**). Compare it with
 `infra/dcr.json` from the CLI build.
 
@@ -201,9 +241,12 @@ flowchart TD
 
 | Symptom | Check | Fix |
 |---|---|---|
-| Deployment *Running* for more than 15 min, pod `Init:0/1` | `kubectl get clusterissuer,bundle` → `ErrGetKeyPair: secrets "arc-amp-root-ca-current" not found` | `bash scripts/fix-certmanager-ca.sh`, then `kubectl -n <ns> delete pod -l pipeline=amp-portal-demo`. Copies the root CAs to `-current` and adds the rotation label. **Demo-only**; seen with cert-mgmt 1.2.0 + pipeline 1.7.0 on two clusters; not confirmed as a product defect. |
+| Deployment *Running* for a long time (30+ min); pod `Init:0/1` **or** 3/3 Running with certificate `amp-portal-demo-pipeline-tls-certificate` not Ready | `kubectl get clusterissuer,bundle` → `ErrGetKeyPair: secrets "arc-amp-root-ca-current" not found` / `SourceNotFound` | `bash scripts/fix-certmanager-ca.sh`, then `kubectl -n azure-monitor-ns delete pod -l pipeline=amp-portal-demo`. Copies the root CAs to `-current` and adds the rotation label. The deployment then completes and the fix survives redeploys. **Demo-only**; seen 4 out of 4 times with cert-mgmt 1.2.0 + pipeline 1.7.0; not confirmed as a product defect. |
 | Exports fail | `kubectl -n <ns> logs <pod> -c collector \| grep export.failed` | Run the forensics script: `kubectl -n <ns> get cm azure-monitor-pipeline-forensics -o go-template='{{ index .data "azure-monitor-pipeline-forensics.sh" }}' > f.sh && bash f.sh -n <ns> -p amp-portal-demo` |
-| No data, no errors | `kubectl -n <ns> get svc` | Make sure Part C's LoadBalancer exists and shows `192.168.2.100` |
+| No data, no errors | `kubectl -n <ns> get svc`, then DCR metric *Rows Received* | No rows: make sure Part C's LoadBalancer exists and shows `192.168.2.100`. Rows received: check the DCR's **destination workspace** (wizard retries can switch it to `DefaultWorkspace-…`) |
+| Some UDP test messages missing | right after a pod restart | Syslog over UDP has no delivery guarantee; resend after the pod has been Ready for a few minutes |
+| Review + create fails: `PreflightValidationError … Cluster Extension IDs` | Portal bug, both entry points | Fix `clusterExtensionIds` in the template, see **B4a** |
+| Portal pre-fills a `default-syslog` dataflow on port 514; adding a new one says "port already in use" | Dataflows tab | Edit `default-syslog` instead of adding a new dataflow |
 | Operator `CrashLoopBackOff` | the doc's troubleshooting section | Cert-management extension missing (already installed here) |
 
 ---
@@ -213,9 +256,11 @@ flowchart TD
 ```bash
 # Azure: remove what the portal created (keeps Arc, cert-manager, workspace)
 az resource delete -g rg-amp-lab -n amp-portal-demo --resource-type Microsoft.Monitor/pipelineGroups
-az customlocation delete -g rg-amp-lab -n <custom-location> -y
-az k8s-extension delete -g rg-amp-lab --cluster-name arc-amp-lab --cluster-type connectedClusters -n <pipeline-extension> -y
-az monitor data-collection rule list -g rg-amp-lab -o table      # delete the portal-created DCR/DCE
+az customlocation delete -g rg-amp-lab -n azure-monitor-arc-amp-lab -y
+az k8s-extension delete -g rg-amp-lab --cluster-name arc-amp-lab --cluster-type connectedClusters -n azmon-pipeline-extension -y
+az monitor data-collection rule list -g rg-amp-lab -o table      # delete the portal-created DCR/DCE (Aep-amp-portal-demo-*)
+kubectl delete ns azure-monitor-ns
+kubectl -n cert-manager delete secret arc-amp-root-ca arc-amp-client-root-ca arc-amp-root-ca-current arc-amp-client-root-ca-current
 # Everything:
 az group delete -n rg-amp-lab -y ; ssh host01 'qm destroy 110 --purge' ; rm /etc/rsyslog.d/90-amp-lab.conf (both hosts)
 ```
