@@ -204,7 +204,19 @@ flowchart TD
 | Deployment *Running* for more than 15 min, pod `Init:0/1` | `kubectl get clusterissuer,bundle` → `ErrGetKeyPair: secrets "arc-amp-root-ca-current" not found` | `bash scripts/fix-certmanager-ca.sh`, then `kubectl -n <ns> delete pod -l pipeline=amp-portal-demo`. Copies the root CAs to `-current` and adds the rotation label. **Demo-only**; seen with cert-mgmt 1.2.0 + pipeline 1.7.0 on two clusters; not confirmed as a product defect. |
 | Exports fail | `kubectl -n <ns> logs <pod> -c collector \| grep export.failed` | Run the forensics script: `kubectl -n <ns> get cm azure-monitor-pipeline-forensics -o go-template='{{ index .data "azure-monitor-pipeline-forensics.sh" }}' > f.sh && bash f.sh -n <ns> -p amp-portal-demo` |
 | No data, no errors | `kubectl -n <ns> get svc` | Make sure Part C's LoadBalancer exists and shows `192.168.2.100` |
+| Review + create fails: `PreflightValidationError … Invalid Format of Cluster Extension IDs: [.../extensions/]` (extension name missing) | Portal bug seen 1 Oct 2026 from both entry points | Pre-create the extension and custom location with CLI (below), then in **Basics** select the existing custom location `azure-monitor-arc-amp-lab` |
+| Portal pre-fills a `default-syslog` dataflow on port 514; adding a new one says "port already in use" | Dataflows tab | Edit `default-syslog` instead of adding a new dataflow |
 | Operator `CrashLoopBackOff` | the doc's troubleshooting section | Cert-management extension missing (already installed here) |
+
+**Pre-create the extension and custom location (workaround for the preflight error):**
+```bash
+RG=rg-amp-lab; CL=arc-amp-lab; NS=azure-monitor-arc-amp-lab
+az k8s-extension create -n azure-monitor-pipeline --extension-type microsoft.monitor.pipelinecontroller \
+  --scope cluster --release-namespace $NS --cluster-name $CL -g $RG --cluster-type connectedClusters --release-train Preview
+az customlocation create -n $NS -g $RG -l westeurope --namespace $NS \
+  --host-resource-id $(az connectedk8s show -n $CL -g $RG --query id -o tsv) \
+  --cluster-extension-ids $(az k8s-extension show -n azure-monitor-pipeline --cluster-name $CL -g $RG --cluster-type connectedClusters --query id -o tsv)
+```
 
 ---
 
