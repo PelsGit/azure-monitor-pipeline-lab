@@ -186,17 +186,28 @@ Or from a Proxmox host: `logger -t amp-demo "hello from $(hostname)"`.
 
 ## Part E: Verify (official checks + lab checks)
 
+Each Log Analytics check below comes in two forms: the **KQL** and an equivalent **prompt** for the
+**Azure Copilot Observability Agent** (preview). This shows the customer that data ingested through the
+pipeline is immediately usable by agentic tooling, because once it lands in a Log Analytics workspace it's
+ordinary `Syslog` data.
+
+> **How to open the agent:** *law-amp-lab → Logs → **Observability Agent*** button. The chat is scoped to
+> the workspace. If a query is already open in Logs, the agent picks it up. You can ask it to
+> *"show the KQL you used"* to compare with the queries below.
+> **Notes:** preview feature; it runs with **your** RBAC permissions; access is controlled through Azure Copilot
+> settings. Usage is billed in Azure Agent Credits (a deep investigation is capped at 300 AACs), so
+> stick to chat prompts for the demo. The agent's answers are generated, so treat the KQL as the ground truth.
+
 **E1. Cluster components:** *Arc cluster `arc-amp-lab` → Kubernetes resources → Services and ingresses*.
 Expect `amp-portal-demo-service` in namespace `azure-monitor-ns`. The docs also list
 `amp-portal-demo-external-service`; it was **not** created in this lab (UDP syslog, TLS off). Our own
 `amp-portal-demo-lan` from Part C takes that role.
 
 **E2. Heartbeat** (every minute; `OSMajorVersion` = pipeline name). In *law-amp-lab → Logs*:
-```kusto
-Heartbeat
-| where OSMajorVersion == "amp-portal-demo"
-| summarize LastBeat = max(TimeGenerated) by Computer, OSMajorVersion
-```
+
+| KQL | 🤖 Agent prompt |
+|---|---|
+| `Heartbeat`<br>`\| where OSMajorVersion == "amp-portal-demo"`<br>`\| summarize LastBeat = max(TimeGenerated) by Computer, OSMajorVersion` | *"Is the Azure Monitor pipeline `amp-portal-demo` sending heartbeats to this workspace? When was the last one?"* |
 > ⚠️ In this lab (pipeline 1.7.0) **no pipeline heartbeat appeared** in either workspace, while data did
 > arrive. Treat E3/E4 as the real proof; don't treat a missing heartbeat alone as a failure.
 
@@ -205,24 +216,41 @@ Heartbeat
 workspace** (`destinations.logAnalytics[].workspaceResourceId` in the JSON view).
 
 **E3. Data arrived** (allow 5–10 minutes for first ingestion):
-```kusto
-Syslog
-| where TimeGenerated > ago(30m)
-| summarize Records = count() by Computer, ProcessName
-| order by Records desc
-```
+
+| KQL | 🤖 Agent prompt |
+|---|---|
+| `Syslog`<br>`\| where TimeGenerated > ago(30m)`<br>`\| summarize Records = count() by Computer, ProcessName`<br>`\| order by Records desc` | *"Which hosts sent syslog to this workspace in the last 30 minutes, and which processes are the most active per host?"* |
 
 **E4. Transformation works** (both should return **0**):
-```kusto
-Syslog | where TimeGenerated > ago(30m) | where SeverityLevel == 'debug' | count
-Syslog | where TimeGenerated > ago(30m) | where ProcessName == 'postfix' | count
-```
+
+| KQL | 🤖 Agent prompt |
+|---|---|
+| `Syslog \| where TimeGenerated > ago(30m) \| where SeverityLevel == 'debug' \| count` | *"Did any debug-level syslog messages arrive in the last 30 minutes?"* |
+| `Syslog \| where TimeGenerated > ago(30m) \| where ProcessName == 'postfix' \| count` | *"Are there any postfix mail log entries from the last 30 minutes? I expect none because they're filtered at the edge."* |
 
 **E5. See what the portal built for you:** open *Monitor → Data Collection Rules* and find the new DCR
 (named `Aep-amp-portal-demo-<random>`, as is the DCE). In its **JSON view**, look at `dataFlows` (the portal
 uses `Microsoft-Syslog-FullyFormed` as both input and output stream; the CLI build used output `Microsoft-Syslog`; both land in `Syslog`), then
 check *Access control* (the extension's identity has **Monitoring Metrics Publisher**). Compare it with
 `infra/dcr.json` from the CLI build.
+
+
+**E6. Beyond verification: agentic exploration (demo storyline)**
+
+These show what the customer gets on top of the pipeline: natural-language analysis of edge data.
+
+| Goal | KQL | 🤖 Agent prompt |
+|---|---|---|
+| Overview | `Syslog \| where TimeGenerated > ago(24h) \| summarize count() by Computer, SeverityLevel` | *"Summarize the syslog activity from my Proxmox hosts over the last 24 hours. Anything unusual?"* |
+| Trend | `Syslog \| where TimeGenerated > ago(24h) \| summarize count() by bin(TimeGenerated, 1h), Computer \| render timechart` | *"Chart the syslog volume per host per hour for the last day."* |
+| Security | `Syslog \| where TimeGenerated > ago(24h) \| where Facility in ('auth','authpriv') or ProcessName in ('sshd','sshd-session','sudo') \| summarize count() by Computer, ProcessName` | *"Show authentication and sudo activity on my hosts in the last 24 hours. Were there any failed logins?"* |
+| Errors | `Syslog \| where TimeGenerated > ago(24h) \| where SeverityLevel in ('warning','err','error','crit','critical') \| summarize count() by Computer, ProcessName \| top 10 by count_` | *"What are the top warnings and errors from my Proxmox hosts today, and what do they mean?"* |
+| Cost / tuning | `Syslog \| where TimeGenerated > ago(7d) \| summarize count() by ProcessName \| top 10 by count_` | *"Which processes generate the most syslog volume? Suggest which ones I could filter at the edge to reduce ingestion cost."* |
+| Explain a query | *(open any query above first)* | *"Explain this query and its results in plain language."* |
+
+> **Demo tip:** the *Cost / tuning* prompt closes the loop nicely. The agent suggests noisy processes,
+> which you then add to the pipeline transformation (B3), showing **edge filtering + AI-assisted tuning**.
+> Rehearse the prompts first: answers vary, and raw syslog can show hostnames and usernames.
 
 ---
 
