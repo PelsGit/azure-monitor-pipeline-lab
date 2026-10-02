@@ -1,0 +1,47 @@
+# Synology NAS health via SNMPv3 (read-only user amp-snmp, authPriv SHA/AES; creds in Secret monitoring/snmp-nas)
+# Demo-safe module: system/fan/power/temp, disk + RAID health/capacity, interface traffic.
+# Excluded on purpose: serials, disk models, iSCSI LUN names, service users, share names, NAS syslog.
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: snmp-exporter, namespace: monitoring, labels: {app: snmp-exporter}}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: snmp-exporter}}
+  template:
+    metadata: {labels: {app: snmp-exporter}}
+    spec:
+      securityContext: {runAsNonRoot: true, runAsUser: 65534}
+      containers:
+      - name: exporter
+        image: prom/snmp-exporter:v0.30.1
+        args: ["--config.file=/etc/snmp_exporter/snmp.yml", "--config.expand-environment-variables"]
+        envFrom: [{secretRef: {name: snmp-nas}}]
+        ports: [{name: metrics, containerPort: 9116}]
+        volumeMounts: [{name: cfg, mountPath: /etc/snmp_exporter}]
+        resources:
+          requests: {cpu: 10m, memory: 32Mi}
+          limits: {cpu: 200m, memory: 128Mi}
+      volumes: [{name: cfg, configMap: {name: snmp-exporter-config}}]
+---
+apiVersion: v1
+kind: Service
+metadata: {name: snmp-exporter, namespace: monitoring, labels: {app: snmp-exporter}}
+spec:
+  selector: {app: snmp-exporter}
+  ports: [{name: metrics, port: 9116, targetPort: 9116}]
+---
+apiVersion: azmonitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata: {name: snmp-nas, namespace: monitoring}
+spec:
+  labelLimit: 63
+  labelNameLengthLimit: 511
+  labelValueLengthLimit: 1023
+  selector: {matchLabels: {app: snmp-exporter}}
+  endpoints:
+  - port: metrics
+    path: /snmp
+    interval: 60s
+    params: {target: ["192.168.2.200"], auth: ["nas_v3"], module: ["synology,if_mib"]}
+    relabelings:
+    - {targetLabel: device, replacement: nas}
