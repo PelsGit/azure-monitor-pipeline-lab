@@ -1,0 +1,57 @@
+# Proxmox metrics for Azure Managed Prometheus (amp-lab Grafana demo)
+# Read-only: PVE user pve-exporter@pve, role PVEAuditor, token in Secret monitoring/pve-exporter
+# Demo-safe: guest names are dropped; guests are identified by VMID only.
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: pve-exporter, namespace: monitoring, labels: {app: pve-exporter}}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: pve-exporter}}
+  template:
+    metadata: {labels: {app: pve-exporter}}
+    spec:
+      securityContext: {runAsNonRoot: true, runAsUser: 65534}
+      containers:
+      - name: exporter
+        image: prompve/prometheus-pve-exporter:3.10.0
+        args: ["--web.listen-address=:9221"]
+        envFrom: [{secretRef: {name: pve-exporter}}]
+        ports: [{name: metrics, containerPort: 9221}]
+        resources:
+          requests: {cpu: 20m, memory: 64Mi}
+          limits: {cpu: 200m, memory: 192Mi}
+        readinessProbe: {httpGet: {path: /, port: 9221}, periodSeconds: 30}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: pve-exporter, namespace: monitoring, labels: {app: pve-exporter}}
+spec:
+  selector: {app: pve-exporter}
+  ports: [{name: metrics, port: 9221, targetPort: 9221}]
+---
+apiVersion: azmonitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata: {name: pve-exporter, namespace: monitoring}
+spec:
+  labelLimit: 63
+  labelNameLengthLimit: 511
+  labelValueLengthLimit: 1023
+  selector: {matchLabels: {app: pve-exporter}}
+  endpoints:
+  # cluster=1 on one node returns cluster-wide guests/storage; node=1 adds that node's own metrics.
+  - port: metrics
+    path: /pve
+    interval: 60s
+    params: {target: ["192.168.2.160"], cluster: ["1"], node: ["1"]}
+    relabelings:
+    - {targetLabel: pve_target, replacement: host01}
+    metricRelabelings: &demo_safe
+    # Demo-safe: drop guest/storage names, keep VMID ("id" = qemu/110, lxc/108, node/host01, storage/host01/PBS)
+    - {action: labeldrop, regex: "name|template|tags"}
+  - port: metrics
+    path: /pve
+    interval: 60s
+    params: {target: ["192.168.2.161"], cluster: ["0"], node: ["1"]}
+    relabelings:
+    - {targetLabel: pve_target, replacement: host02}
+    metricRelabelings: *demo_safe

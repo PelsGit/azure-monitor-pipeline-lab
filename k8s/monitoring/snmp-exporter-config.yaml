@@ -1,0 +1,378 @@
+apiVersion: v1
+data:
+  snmp.yml: |
+    auths:
+      nas_v3:
+        version: 3
+        username: amp-snmp
+        security_level: authPriv
+        auth_protocol: SHA
+        password: ${SNMP_AUTH}
+        priv_protocol: AES
+        priv_password: ${SNMP_PRIV}
+    modules:
+      synology:
+        walk:
+        - 1.3.6.1.4.1.6574.1
+        - 1.3.6.1.4.1.6574.2
+        - 1.3.6.1.4.1.6574.3
+        metrics:
+        - name: systemStatus
+          oid: 1.3.6.1.4.1.6574.1.1
+          type: gauge
+          help: Synology system status Each meanings of status represented describe below - 1.3.6.1.4.1.6574.1.1
+        - name: temperature
+          oid: 1.3.6.1.4.1.6574.1.2
+          type: gauge
+          help: Synology system temperature The temperature of Disk Station uses Celsius degree. - 1.3.6.1.4.1.6574.1.2
+        - name: powerStatus
+          oid: 1.3.6.1.4.1.6574.1.3
+          type: gauge
+          help: Synology power status Each meanings of status represented describe below - 1.3.6.1.4.1.6574.1.3
+        - name: systemFanStatus
+          oid: 1.3.6.1.4.1.6574.1.4.1
+          type: gauge
+          help: Synology system fan status Each meanings of status represented describe below - 1.3.6.1.4.1.6574.1.4.1
+        - name: cpuFanStatus
+          oid: 1.3.6.1.4.1.6574.1.4.2
+          type: gauge
+          help: Synology cpu fan status Each meanings of status represented describe below - 1.3.6.1.4.1.6574.1.4.2
+        - name: upgradeAvailable
+          oid: 1.3.6.1.4.1.6574.1.5.4
+          type: gauge
+          help: This oid is for checking whether there is a latest DSM can be upgraded - 1.3.6.1.4.1.6574.1.5.4
+        - name: diskIndex
+          oid: 1.3.6.1.4.1.6574.2.1.1.1
+          type: gauge
+          help: The index of disk table - 1.3.6.1.4.1.6574.2.1.1.1
+          indexes:
+          - labelname: diskIndex
+            type: gauge
+          lookups:
+          - labels:
+            - diskIndex
+            labelname: diskID
+            oid: 1.3.6.1.4.1.6574.2.1.1.2
+            type: OctetString
+        - name: diskID
+          oid: 1.3.6.1.4.1.6574.2.1.1.2
+          type: OctetString
+          help: Synology disk ID The ID of disk is assigned by disk Station. - 1.3.6.1.4.1.6574.2.1.1.2
+          indexes:
+          - labelname: diskIndex
+            type: gauge
+          lookups:
+          - labels:
+            - diskIndex
+            labelname: diskID
+            oid: 1.3.6.1.4.1.6574.2.1.1.2
+            type: OctetString
+        - name: diskStatus
+          oid: 1.3.6.1.4.1.6574.2.1.1.5
+          type: gauge
+          help: Synology disk status Each meanings of status represented describe below - 1.3.6.1.4.1.6574.2.1.1.5
+          indexes:
+          - labelname: diskIndex
+            type: gauge
+          lookups:
+          - labels:
+            - diskIndex
+            labelname: diskID
+            oid: 1.3.6.1.4.1.6574.2.1.1.2
+            type: OctetString
+        - name: diskTemperature
+          oid: 1.3.6.1.4.1.6574.2.1.1.6
+          type: gauge
+          help: Synology disk temperature The temperature of each disk uses Celsius degree. - 1.3.6.1.4.1.6574.2.1.1.6
+          indexes:
+          - labelname: diskIndex
+            type: gauge
+          lookups:
+          - labels:
+            - diskIndex
+            labelname: diskID
+            oid: 1.3.6.1.4.1.6574.2.1.1.2
+            type: OctetString
+        - name: diskBadSector
+          oid: 1.3.6.1.4.1.6574.2.1.1.9
+          type: gauge
+          help: Synology disk bad sector count The count of each disk I/O bad sector. - 1.3.6.1.4.1.6574.2.1.1.9
+          indexes:
+          - labelname: diskIndex
+            type: gauge
+          lookups:
+          - labels:
+            - diskIndex
+            labelname: diskID
+            oid: 1.3.6.1.4.1.6574.2.1.1.2
+            type: OctetString
+        - name: diskRemainLife
+          oid: 1.3.6.1.4.1.6574.2.1.1.11
+          type: gauge
+          help: Synology disk remainLife The estimate remain life of each disk. - 1.3.6.1.4.1.6574.2.1.1.11
+          indexes:
+          - labelname: diskIndex
+            type: gauge
+          lookups:
+          - labels:
+            - diskIndex
+            labelname: diskID
+            oid: 1.3.6.1.4.1.6574.2.1.1.2
+            type: OctetString
+        - name: diskHealthStatus
+          oid: 1.3.6.1.4.1.6574.2.1.1.13
+          type: gauge
+          help: Synology disk health status Each meanings of status represented describe below - 1.3.6.1.4.1.6574.2.1.1.13
+          indexes:
+          - labelname: diskIndex
+            type: gauge
+          lookups:
+          - labels:
+            - diskIndex
+            labelname: diskID
+            oid: 1.3.6.1.4.1.6574.2.1.1.2
+            type: OctetString
+        - name: raidIndex
+          oid: 1.3.6.1.4.1.6574.3.1.1.1
+          type: gauge
+          help: The index of raid table - 1.3.6.1.4.1.6574.3.1.1.1
+          indexes:
+          - labelname: raidIndex
+            type: gauge
+          lookups:
+          - labels:
+            - raidIndex
+            labelname: raidName
+            oid: 1.3.6.1.4.1.6574.3.1.1.2
+            type: DisplayString
+        - name: raidName
+          oid: 1.3.6.1.4.1.6574.3.1.1.2
+          type: DisplayString
+          help: Synology raid name The name of each raid will be showed here. - 1.3.6.1.4.1.6574.3.1.1.2
+          indexes:
+          - labelname: raidIndex
+            type: gauge
+          lookups:
+          - labels:
+            - raidIndex
+            labelname: raidName
+            oid: 1.3.6.1.4.1.6574.3.1.1.2
+            type: DisplayString
+        - name: raidStatus
+          oid: 1.3.6.1.4.1.6574.3.1.1.3
+          type: gauge
+          help: Synology Raid status Each meanings of status represented describe below - 1.3.6.1.4.1.6574.3.1.1.3
+          indexes:
+          - labelname: raidIndex
+            type: gauge
+          lookups:
+          - labels:
+            - raidIndex
+            labelname: raidName
+            oid: 1.3.6.1.4.1.6574.3.1.1.2
+            type: DisplayString
+        - name: raidFreeSize
+          oid: 1.3.6.1.4.1.6574.3.1.1.4
+          type: gauge
+          help: Synology raid freesize Free space in bytes. - 1.3.6.1.4.1.6574.3.1.1.4
+          indexes:
+          - labelname: raidIndex
+            type: gauge
+          lookups:
+          - labels:
+            - raidIndex
+            labelname: raidName
+            oid: 1.3.6.1.4.1.6574.3.1.1.2
+            type: DisplayString
+        - name: raidTotalSize
+          oid: 1.3.6.1.4.1.6574.3.1.1.5
+          type: gauge
+          help: Synology raid totalsize Total space in bytes. - 1.3.6.1.4.1.6574.3.1.1.5
+          indexes:
+          - labelname: raidIndex
+            type: gauge
+          lookups:
+          - labels:
+            - raidIndex
+            labelname: raidName
+            oid: 1.3.6.1.4.1.6574.3.1.1.2
+            type: DisplayString
+      if_mib:
+        walk:
+        - 1.3.6.1.2.1.2
+        - 1.3.6.1.2.1.31.1.1
+        metrics:
+        - name: ifIndex
+          oid: 1.3.6.1.2.1.2.2.1.1
+          type: gauge
+          help: A unique value, greater than zero, for each interface - 1.3.6.1.2.1.2.2.1.1
+          indexes:
+          - labelname: ifIndex
+            type: gauge
+          lookups:
+          - labels:
+            - ifIndex
+            labelname: ifAlias
+            oid: 1.3.6.1.2.1.31.1.1.1.18
+            type: DisplayString
+          - labels:
+            - ifIndex
+            labelname: ifDescr
+            oid: 1.3.6.1.2.1.2.2.1.2
+            type: DisplayString
+          - labels:
+            - ifIndex
+            labelname: ifName
+            oid: 1.3.6.1.2.1.31.1.1.1.1
+            type: DisplayString
+        - name: ifOperStatus
+          oid: 1.3.6.1.2.1.2.2.1.8
+          type: gauge
+          help: The current operational state of the interface - 1.3.6.1.2.1.2.2.1.8
+          indexes:
+          - labelname: ifIndex
+            type: gauge
+          lookups:
+          - labels:
+            - ifIndex
+            labelname: ifAlias
+            oid: 1.3.6.1.2.1.31.1.1.1.18
+            type: DisplayString
+          - labels:
+            - ifIndex
+            labelname: ifDescr
+            oid: 1.3.6.1.2.1.2.2.1.2
+            type: DisplayString
+          - labels:
+            - ifIndex
+            labelname: ifName
+            oid: 1.3.6.1.2.1.31.1.1.1.1
+            type: DisplayString
+          enum_values:
+            1: up
+            2: down
+            3: testing
+            4: unknown
+            5: dormant
+            6: notPresent
+            7: lowerLayerDown
+        - name: ifInErrors
+          oid: 1.3.6.1.2.1.2.2.1.14
+          type: counter
+          help: For packet-oriented interfaces, the number of inbound packets that contained errors preventing them from being deliverable to a higher-layer protocol - 1.3.6.1.2.1.2.2.1.14
+          indexes:
+          - labelname: ifIndex
+            type: gauge
+          lookups:
+          - labels:
+            - ifIndex
+            labelname: ifAlias
+            oid: 1.3.6.1.2.1.31.1.1.1.18
+            type: DisplayString
+          - labels:
+            - ifIndex
+            labelname: ifDescr
+            oid: 1.3.6.1.2.1.2.2.1.2
+            type: DisplayString
+          - labels:
+            - ifIndex
+            labelname: ifName
+            oid: 1.3.6.1.2.1.31.1.1.1.1
+            type: DisplayString
+        - name: ifOutErrors
+          oid: 1.3.6.1.2.1.2.2.1.20
+          type: counter
+          help: For packet-oriented interfaces, the number of outbound packets that could not be transmitted because of errors - 1.3.6.1.2.1.2.2.1.20
+          indexes:
+          - labelname: ifIndex
+            type: gauge
+          lookups:
+          - labels:
+            - ifIndex
+            labelname: ifAlias
+            oid: 1.3.6.1.2.1.31.1.1.1.18
+            type: DisplayString
+          - labels:
+            - ifIndex
+            labelname: ifDescr
+            oid: 1.3.6.1.2.1.2.2.1.2
+            type: DisplayString
+          - labels:
+            - ifIndex
+            labelname: ifName
+            oid: 1.3.6.1.2.1.31.1.1.1.1
+            type: DisplayString
+        - name: ifHCInOctets
+          oid: 1.3.6.1.2.1.31.1.1.1.6
+          type: counter
+          help: The total number of octets received on the interface, including framing characters - 1.3.6.1.2.1.31.1.1.1.6
+          indexes:
+          - labelname: ifIndex
+            type: gauge
+          lookups:
+          - labels:
+            - ifIndex
+            labelname: ifAlias
+            oid: 1.3.6.1.2.1.31.1.1.1.18
+            type: DisplayString
+          - labels:
+            - ifIndex
+            labelname: ifDescr
+            oid: 1.3.6.1.2.1.2.2.1.2
+            type: DisplayString
+          - labels:
+            - ifIndex
+            labelname: ifName
+            oid: 1.3.6.1.2.1.31.1.1.1.1
+            type: DisplayString
+        - name: ifHCOutOctets
+          oid: 1.3.6.1.2.1.31.1.1.1.10
+          type: counter
+          help: The total number of octets transmitted out of the interface, including framing characters - 1.3.6.1.2.1.31.1.1.1.10
+          indexes:
+          - labelname: ifIndex
+            type: gauge
+          lookups:
+          - labels:
+            - ifIndex
+            labelname: ifAlias
+            oid: 1.3.6.1.2.1.31.1.1.1.18
+            type: DisplayString
+          - labels:
+            - ifIndex
+            labelname: ifDescr
+            oid: 1.3.6.1.2.1.2.2.1.2
+            type: DisplayString
+          - labels:
+            - ifIndex
+            labelname: ifName
+            oid: 1.3.6.1.2.1.31.1.1.1.1
+            type: DisplayString
+        - name: ifHighSpeed
+          oid: 1.3.6.1.2.1.31.1.1.1.15
+          type: gauge
+          help: An estimate of the interface's current bandwidth in units of 1,000,000 bits per second - 1.3.6.1.2.1.31.1.1.1.15
+          indexes:
+          - labelname: ifIndex
+            type: gauge
+          lookups:
+          - labels:
+            - ifIndex
+            labelname: ifAlias
+            oid: 1.3.6.1.2.1.31.1.1.1.18
+            type: DisplayString
+          - labels:
+            - ifIndex
+            labelname: ifDescr
+            oid: 1.3.6.1.2.1.2.2.1.2
+            type: DisplayString
+          - labels:
+            - ifIndex
+            labelname: ifName
+            oid: 1.3.6.1.2.1.31.1.1.1.1
+            type: DisplayString
+kind: ConfigMap
+metadata:
+  creationTimestamp: null
+  name: snmp-exporter-config
+  namespace: monitoring
