@@ -170,6 +170,92 @@ kubectl -n $NS get svc amp-portal-demo-lan     # EXTERNAL-IP should be 192.168.2
 
 The Proxmox hosts are already pointed at `192.168.2.100:514/udp`, so data starts flowing straight away.
 
+### C2. Configure clients (sources) 🏠
+
+> **Not covered in the official pipeline docs.** They only say *"point your data sources to the pipeline
+> endpoint"* ([configure-cli workflow](https://learn.microsoft.com/en-us/azure/azure-monitor/data-collection/pipeline-configure-cli)),
+> *"configure your external clients to connect to the right gateway IP and port"* ([configure, step 5](https://learn.microsoft.com/en-us/azure/azure-monitor/data-collection/pipeline-configure)),
+> and *"point the new client at `$GATEWAY_IP:514`"* ([gateway → Add a new client](https://learn.microsoft.com/en-us/azure/azure-monitor/data-collection/pipeline-kubernetes-gateway#add-a-new-client-to-an-existing-receiver)).
+> The client side is standard syslog/OTLP, so configure it the way each OS or device normally does.
+> The examples below come from the [rsyslog `omfwd` docs](https://www.rsyslog.com/doc/configuration/modules/omfwd.html)
+> and were validated in this lab (Proxmox VE 9 / Debian 13, rsyslog 8.2504).
+
+```mermaid
+flowchart LR
+  subgraph SRC["Sources: only 'send', no agent, no Azure credentials"]
+    L["Linux / Proxmox<br/>rsyslog drop-in"]
+    A["Appliance / switch / NAS<br/>'Syslog server' setting in its UI"]
+    O["App / OTel SDK<br/>OTLP exporter"]
+  end
+  L -- "UDP/TCP 514" --> P["Pipeline endpoint<br/>192.168.2.100"]
+  A -- "UDP/TCP 514" --> P
+  O -- "gRPC 4317" --> P
+```
+
+**What each source needs to match from the dataflow (B3):**
+
+| Dataflow setting | Client must use |
+|---|---|
+| Port / Protocol | the same port and UDP/TCP (here **514/UDP**) |
+| Format `5424` | RFC 5424 output. rsyslog: `template="RSYSLOG_SyslogProtocol23Format"` |
+| Format `3164` | classic BSD format (rsyslog default `RSYSLOG_ForwardFormat`, most appliances) |
+| Collect messages with PRI header | messages start with `<PRI>`; nearly all senders do this |
+
+**a) Linux / Proxmox: rsyslog, UDP (what this lab uses)**
+
+`/etc/rsyslog.d/90-amp-lab.conf` on **each** host (not synced by the Proxmox cluster):
+```text
+# Forward to Azure Monitor pipeline (delete this file + restart rsyslog to undo)
+*.info;auth,authpriv.* action(type="omfwd" target="192.168.2.100" port="514" protocol="udp"
+                              template="RSYSLOG_SyslogProtocol23Format")
+```
+```bash
+rsyslogd -N1 && systemctl restart rsyslog        # validate, then apply
+logger -p auth.notice -t amp-demo "hello from $(hostname)"
+```
+- `*.info;auth,authpriv.*` = everything at info and above, plus all auth messages. Narrow it to reduce
+  volume, or let the pipeline transformation filter centrally (B3).
+- Proxmox VE 9 ships rsyslog and journald forwards to it by default, so nothing else is needed.
+
+**b) Linux: rsyslog over TCP with a disk-assisted queue (recommended beyond a lab)**
+
+UDP is fire-and-forget: messages sent while the pipeline restarts are lost (seen in this lab). TCP plus a
+queue buffers on the host. Requires a **TCP** dataflow on the pipeline side.
+```text
+*.info;auth,authpriv.* action(type="omfwd" target="192.168.2.100" port="514" protocol="tcp"
+    template="RSYSLOG_SyslogProtocol23Format" TCP_Framing="octet-counted"
+    queue.type="LinkedList" queue.size="10000" queue.filename="amp_fwd" queue.saveOnShutdown="on"
+    action.resumeRetryCount="-1" action.resumeInterval="10")
+```
+> ✅ This config passes rsyslog validation on host01; it wasn't applied in this lab. For encryption, add `StreamDriver="gtls"`,
+> `StreamDriverMode="1"` and CA settings, and enable TLS on the pipeline receiver plus a gateway (see the
+> [TLS docs](https://learn.microsoft.com/en-us/azure/azure-monitor/data-collection/pipeline-tls)).
+
+**c) Linux: syslog-ng**
+```text
+destination d_amp { syslog("192.168.2.100" transport("udp") port(514)); };   # RFC 5424
+log { source(s_src); destination(d_amp); };
+```
+
+**d) Appliances (Synology, UniFi, firewalls, switches)**
+
+Set *Remote syslog server* = `192.168.2.100`, port `514`, protocol `UDP` (or TCP if you created a TCP dataflow),
+format **BSD/3164** or **IETF/5424** to match the dataflow. No software install.
+> 🏠 In this lab the NAS deliberately sends **no** syslog (file/connection logs contain personal data);
+> it's monitored through SNMP metrics instead (see `docs/GRAFANA.md`).
+
+**e) OpenTelemetry apps (OTLP, preview)**
+Set `OTEL_EXPORTER_OTLP_ENDPOINT=http://<pipeline-ip>:4317` and `OTEL_EXPORTER_OTLP_PROTOCOL=grpc`
+(needs an OTLP dataflow; in-cluster clients can use `<pipeline>-service.<namespace>.svc:4317`).
+
+**Check connectivity from a source** (from the [troubleshoot article](https://learn.microsoft.com/en-us/azure/azure-monitor/data-collection/pipeline-troubleshoot)):
+```bash
+nc -zv 192.168.2.100 514          # TCP receivers only; UDP can't be "connected" to
+logger -n 192.168.2.100 -P 514 -d --rfc5424 -t amp-demo "udp test"   # UDP: send, then check E3
+grpcurl -plaintext 192.168.2.100:4317 list                            # OTLP
+```
+On the pipeline side, confirm packets arrive: `sudo tcpdump -ni any udp port 514` on VM 110.
+
 ---
 
 ## Part D: Send test data
