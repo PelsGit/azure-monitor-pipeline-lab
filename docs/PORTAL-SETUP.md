@@ -289,13 +289,13 @@ Expect `amp-portal-demo-service` in namespace `azure-monitor-ns`. The docs also 
 `amp-portal-demo-external-service`; it was **not** created in this lab (UDP syslog, TLS off). Our own
 `amp-portal-demo-lan` from Part C takes that role.
 
-**E2. Heartbeat** (every minute; `OSMajorVersion` = pipeline name). In *law-amp-lab → Logs*:
+**E2. Heartbeat** (docs: every minute, `OSMajorVersion` = pipeline name; actual behaviour below). In *law-amp-lab → Logs*:
 
 | KQL | 🤖 Agent prompt |
 |---|---|
-| `Heartbeat`<br>`\| where OSMajorVersion == "amp-portal-demo"`<br>`\| summarize LastBeat = max(TimeGenerated) by Computer, OSMajorVersion` | *"Is the Azure Monitor pipeline `amp-portal-demo` sending heartbeats to this workspace? When was the last one?"* |
-> ⚠️ In this lab (pipeline 1.7.0) **no pipeline heartbeat appeared** in either workspace, while data did
-> arrive. Treat E3/E4 as the real proof; don't treat a missing heartbeat alone as a failure.
+| `Heartbeat`<br>`\| where Computer startswith "amp-portal-demo"`<br>`\| summarize LastBeat = max(TimeGenerated) by Computer, Version` | *"In this workspace's Heartbeat table, is the computer amp-portal-demo-statefulset-0 still sending heartbeats? When was the last one?"* |
+> ⚠️ **The docs are inaccurate here (pipeline 1.7.0):** the heartbeat *does* arrive (every ~15 s), but `OSMajorVersion` is `3`
+> (Azure Linux), **not** the pipeline name. Filter on `Computer` = `<pipeline>-statefulset-<n>`; `Version` = extension version.
 
 **E2b. DCR metrics (portal view of the edge → cloud hop):** *DCR → Monitoring → Metrics*, using
 `Rows Received` and `Rows Dropped`. Rows received but nothing in the table? Check the DCR's **destination
@@ -305,14 +305,14 @@ workspace** (`destinations.logAnalytics[].workspaceResourceId` in the JSON view)
 
 | KQL | 🤖 Agent prompt |
 |---|---|
-| `Syslog`<br>`\| where TimeGenerated > ago(30m)`<br>`\| summarize Records = count() by Computer, ProcessName`<br>`\| order by Records desc` | *"Which hosts sent syslog to this workspace in the last 30 minutes, and which processes are the most active per host?"* |
+| `Syslog`<br>`\| where TimeGenerated > ago(30m)`<br>`\| summarize Records = count() by Computer, ProcessName`<br>`\| order by Records desc` | *"Using the Syslog table in this workspace: which computers sent messages in the last 30 minutes, and which processes are the most active per computer?"* |
 
 **E4. Transformation works** (both should return **0**):
 
 | KQL | 🤖 Agent prompt |
 |---|---|
-| `Syslog \| where TimeGenerated > ago(30m) \| where SeverityLevel == 'debug' \| count` | *"Did any debug-level syslog messages arrive in the last 30 minutes?"* |
-| `Syslog \| where TimeGenerated > ago(30m) \| where ProcessName == 'postfix' \| count` | *"Are there any postfix mail log entries from the last 30 minutes? I expect none because they're filtered at the edge."* |
+| `Syslog \| where TimeGenerated > ago(30m) \| where SeverityLevel == 'debug' \| count` | *"In the Syslog table of this workspace, are there any records with SeverityLevel debug in the last 30 minutes?"* |
+| `Syslog \| where TimeGenerated > ago(30m) \| where ProcessName == 'postfix' \| count` | *"In the Syslog table of this workspace, are there any records with ProcessName postfix in the last 30 minutes? I expect none because they're filtered at the edge."* |
 
 **E5. See what the portal built for you:** open *Monitor → Data Collection Rules* and find the new DCR
 (named `Aep-amp-portal-demo-<random>`, as is the DCE). In its **JSON view**, look at `dataFlows` (the portal
@@ -325,13 +325,21 @@ check *Access control* (the extension's identity has **Monitoring Metrics Publis
 
 These show what the customer gets on top of the pipeline: natural-language analysis of edge data.
 
+> **Keep prompts scoped to pipeline data.** `law-amp-lab` contains only pipeline data (`Syslog` from the
+> pipeline, the pipeline's own `Heartbeat`, plus `Usage`). Even so, the agent can reach other resources you have RBAC on
+> (metrics, Activity Log, Arc servers). Phrasing like *"my hosts"* invites it to go looking for Azure VMs.
+> So every prompt names **the Syslog (or Heartbeat) table in this workspace** explicitly.
+> `CollectorHostName` tells you **which pipeline** wrote a row: `amp-portal-demo` (portal build, filtered) or
+> `amp-lab-pipeline` (earlier CLI build, until 1 Oct, *before* the postfix filter). Use the portal pipeline
+> for cost/tuning, otherwise the agent recommends filtering postfix, which is already filtered.
+
 | Goal | KQL | 🤖 Agent prompt |
 |---|---|---|
-| Overview | `Syslog \| where TimeGenerated > ago(24h) \| summarize count() by Computer, SeverityLevel` | *"Summarize the syslog activity from my Proxmox hosts over the last 24 hours. Anything unusual?"* |
-| Trend | `Syslog \| where TimeGenerated > ago(24h) \| summarize count() by bin(TimeGenerated, 1h), Computer \| render timechart` | *"Chart the syslog volume per host per hour for the last day."* |
-| Security | `Syslog \| where TimeGenerated > ago(24h) \| where Facility in ('auth','authpriv') or ProcessName in ('sshd','sshd-session','sudo') \| summarize count() by Computer, ProcessName` | *"Show authentication and sudo activity on my hosts in the last 24 hours. Were there any failed logins?"* |
-| Errors | `Syslog \| where TimeGenerated > ago(24h) \| where SeverityLevel in ('warning','err','error','crit','critical') \| summarize count() by Computer, ProcessName \| top 10 by count_` | *"What are the top warnings and errors from my Proxmox hosts today, and what do they mean?"* |
-| Cost / tuning | `Syslog \| where TimeGenerated > ago(7d) \| summarize count() by ProcessName \| top 10 by count_` | *"Which processes generate the most syslog volume? Suggest which ones I could filter at the edge to reduce ingestion cost."* |
+| Overview | `Syslog \| where TimeGenerated > ago(24h) \| summarize count() by Computer, SeverityLevel` | *"Summarize the Syslog table in this workspace for the last 24 hours by computer and severity. Is anything unusual?"* |
+| Trend | `Syslog \| where TimeGenerated > ago(24h) \| summarize count() by bin(TimeGenerated, 1h), Computer \| render timechart` | *"Chart the number of Syslog records per computer per hour for the last 24 hours."* |
+| Security | `Syslog \| where TimeGenerated > ago(24h) \| where Facility in ('auth','authpriv') or ProcessName in ('sshd','sshd-session','sudo') \| summarize count() by Computer, ProcessName` | *"From the Syslog table in this workspace, show auth/authpriv, sshd and sudo activity per computer for the last 24 hours. Are there failed login attempts in the messages?"* |
+| Errors | `Syslog \| where TimeGenerated > ago(24h) \| where SeverityLevel in ('warning','err','error','crit','critical') \| summarize count() by Computer, ProcessName \| top 10 by count_` | *"From the Syslog table in this workspace, list the top warning and error messages of the last 24 hours and explain what they mean."* |
+| Cost / tuning | `Syslog \| where TimeGenerated > ago(24h) \| where CollectorHostName == "amp-portal-demo" \| summarize count() by ProcessName \| top 10 by count_` | *"In the Syslog table of this workspace, only for CollectorHostName amp-portal-demo in the last 24 hours: which processes produce the most records? Suggest which ones I could filter at the edge to reduce ingestion cost."* |
 | Explain a query | *(open any query above first)* | *"Explain this query and its results in plain language."* |
 
 > **Demo tip:** the *Cost / tuning* prompt closes the loop nicely. The agent suggests noisy processes,
