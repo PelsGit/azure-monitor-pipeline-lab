@@ -52,17 +52,33 @@ cat /etc/rsyslog.d/90-amp-lab.conf
 | `port="514" protocol="udp"` | "Standard syslog port. Any switch, firewall or appliance can do this." |
 | `RSYSLOG_SyslogProtocol23Format` | "RFC 5424, which matches the dataflow's format setting in Azure." |
 
-**Live: watch it leave the host** (split the screen, or two shells):
+**Live: watch it leave the host.** Open **two shells on the same host** (e.g. two browser tabs with
+Proxmox → host01 → **Shell**, side by side; the Proxmox shell is already root).
+
+**Shell 1** (start first; it keeps running):
 ```bash
-tcpdump -nni vmbr0 -A udp port 514 | grep --line-buffered amp-demo     # shell 1
-logger -p auth.notice -t amp-demo "live demo from $(hostname)"          # shell 2
+tcpdump -l -nni enp88s0 -A "udp port 514 and dst host 192.168.2.100" | grep --line-buffered -B1 amp-demo
 ```
-→ You see `IP 192.168.2.170.xxxxx > 192.168.2.100.514: SYSLOG auth.notice ... live demo from host01`.
+**Shell 2:**
+```bash
+logger -p auth.notice -t amp-demo "live demo from $(hostname)"
+```
+→ Shell 1 shows (tested on both hosts):
+```text
+13:26:02.390489 IP 192.168.2.170.54666 > 192.168.2.100.514: SYSLOG auth.notice, length: 84
+E..pq.@.@.C........d.....\..<37>1 2026-10-05T13:26:02.390379+02:00 host01 amp-demo - - -  live demo from host01
+```
+Point at: **destination `192.168.2.100.514`**, **UDP/SYSLOG**, `auth.notice`, and the raw **RFC 5424** line (`<37>1 …`).
+Stop shell 1 with **Ctrl+C**.
+
+> Why `enp88s0` and not `vmbr0`: both hosts route to .100 via their **second NIC** (`enp88s0`, host01 = .170,
+> host02 = .172). On `vmbr0`, host02 shows nothing and host01 only shows the payload line.
+> `-l` + `grep -B1` keep the header line with the destination port visible.
 
 **Optional, to show the filter:** `logger -p user.debug -t amp-demo "debug: dropped at the edge"` is visible here
 but will **never** reach Azure.
 
-> Note: host01 sends from **.170** (second NIC), not .160. Linux picks the outgoing interface itself.
+> Note: the source address is **.170 / .172** (second NIC), not the .160/.161 management IP. Linux picks the outgoing interface itself.
 
 ---
 
@@ -138,6 +154,6 @@ including the agentic ones."*
 |---|---|
 | Agent button missing or slow | Run the KQL fallback column; say the agent is preview |
 | Live message not in LAW yet | Show the one sent at T-60; explain the 2–5 min ingestion latency |
-| tcpdump shows nothing | Run `logger` again; check `systemctl is-active rsyslog` |
+| tcpdump shows nothing | Check you used `enp88s0` (not `vmbr0`); run `logger` again; `systemctl is-active rsyslog` |
 
 Full background: `docs/PORTAL-SETUP.md` (setup + Part E prompts), `docs/LEARN.md` (concepts).
