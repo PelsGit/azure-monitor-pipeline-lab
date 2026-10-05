@@ -97,7 +97,9 @@ but will **never** reach Azure.
    | where ProcessName !in ('pvestatd', 'CRON', 'systemd-timesyncd', 'postfix')
    ```
    Say: *"postfix used to produce ~2,500 lines a day here. Now it's never sent, never billed."*
-4. **DCR `Aep-amp-portal-demo-*` → Monitoring → Metrics**: *Rows Received* (proof that data crosses the edge → cloud hop).
+   It's a filter that runs inside the pipeline on your own hardware, before anything is sent to Azure. It drops every debug-level message, plus everything from four noisy background processes: Proxmox status polling (pvestatd), scheduled jobs (CRON), clock sync (systemd-timesyncd) and mail (postfix). Only the remaining records reach Log Analytics, so the noise never leaves your network and is
+    never billed.
+5. **DCR `Aep-amp-portal-demo-*` → Monitoring → Metrics**: *Rows Received* (proof that data crosses the edge → cloud hop).
    Access control: only the pipeline's **managed identity** can publish here, so there are no secrets on the edge.
 
 ---
