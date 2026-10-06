@@ -49,6 +49,9 @@ Result: 0 debug/noisy records in `Syslog`; all 20 INFO OTLP records arrived with
 4. The exporter authenticates with the extension's **managed identity** – no secrets on the edge.
 5. Extension release train `Preview` was used for OTLP (preview feature); Syslog/CEF is GA.
 
+## Lab status
+Currently **parked**: see **[docs/STATUS.md](docs/STATUS.md)** for what runs, what was removed and how to bring it back.
+
 ## 15-minute demo
 Runbook: **[docs/DEMO.md](docs/DEMO.md)**: Proxmox host setup, Azure setup, Observability Agent prompts.
 
